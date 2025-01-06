@@ -1,24 +1,42 @@
 use crate::opcodes;
 use std::collections::HashMap;
-/*
-    Flags in the CPU status:
 
-        |N|V|_|B|D|I|Z|C|
-        
-        N -> Negative flag
-        V -> Overflow flag
-        B -> Break command
-        D -> Decimal mode flag
-        I -> Interrupt disable
-        Z -> Zero flag
-        C -> Carry flag
-*/
+bitflags! {
+    /*
+        Flags in the CPU status:
+             7 6 5 4 3 2 1 0
+            |N|V|_|B|D|I|Z|C|
+            
+            N -> Negative flag
+            V -> Overflow flag
+            B -> Break command
+            D -> Decimal mode flag (not used in NES)
+            I -> Interrupt disable
+            Z -> Zero flag
+            C -> Carry flag
+    */
+    pub struct CpuFlags: u8 {
+        const CARRY = 0b00000001;
+        const ZERO = 0b00000010;
+        const INTERRUPT_DISABLE = 0b00000100;
+        const DECIMAL_MODE = 0b00001000;
+        const BREAK = 0b00010000;
+        const BREAK2 = 0b00100000;
+        const OVERFLOW = 0b01000000;
+        const NEGATIVE = 0b10000000;
+    }
+}
+
+const STACK: u16 = 0x0100;
+const STACK_RESET: u8 = 0xFD;
+
 pub struct CPU {
-    pub program_counter: u16,
     pub register_a: u8, // accumulator
     pub register_x: u8,
     pub register_y: u8,
-    pub status: u8,
+    pub status: CpuFlags,
+    pub program_counter: u16,
+    pub stack_pointer: u8,
     memory: [u8; 0xFFFF]
 }
 
@@ -44,7 +62,7 @@ trait Mem {
     fn mem_write(&mut self, address: u16, data: u8);
 
     fn mem_read_u16(&self, address: u16) -> u16 {
-        // Read a 2-byte value, stored in little-endian.
+        // Read a 2-byte value, stored in little-endian convention
         let lo = self.mem_read(address) as u16;
         let hi = self.mem_read(address + 1) as u16;
         (hi << 8) | lo
@@ -71,11 +89,12 @@ impl Mem for CPU {
 impl CPU {
     pub fn new() -> Self {
         CPU {
-            program_counter: 0,
             register_a: 0,
             register_x: 0,
             register_y: 0,
-            status: 0,
+            status: CpuFlags::from_bits_truncate(0b100100),
+            program_counter: 0,
+            stack_pointer: STACK_RESET,
             memory: [0; 0xFFFF]
         }
     }
@@ -130,6 +149,35 @@ impl CPU {
            }
         }
     }
+
+    fn stack_pop(&mut self) -> u8 {
+        self.stack_pointer = self.stack_pointer.wrapping_add(1);
+        self.mem_read((STACK as u16) + self.stack_pointer as u16)
+    }
+
+    fn stack_pop_u16(&mut self) -> u16 {
+        // Data is stored in little-endian convention
+        let lo = self.stack_pop() as u16;
+        let hi = self.stack_pop() as u16;
+        hi << 8 | lo
+    }
+
+    fn stack_push(&mut self, data: u8) {
+        self.mem_write((STACK as u16) + self.stack_pointer as u16, data);
+        self.stack_pointer = self.stack_pointer.wrapping_sub(1);
+    }
+
+    fn stack_push_u16(&mut self, data: u16) {
+        let hi = (data >> 8) as u8;
+        let lo = (data & 0x00FF) as u8;
+        self.stack_push(hi);
+        self.stack_push(lo);
+    }
+
+    fn set_register_a(&mut self, value: u8) {
+        self.register_a = value;
+        self.update_zero_and_negative_flags(self.register_a);
+    }
     
     pub fn load_and_run(&mut self, program: Vec<u8>) {
         self.load(program);
@@ -149,10 +197,12 @@ impl CPU {
         self.register_a = 0;
         self.register_x = 0;
         self.register_y = 0;
-        self.status = 0;
+        self.stack_pointer = STACK_RESET;
+        self.status = CpuFlags::from_bits_truncate(0b100100);
 
         self.program_counter = self.mem_read_u16(0xFFFC);
     }
+
 
     fn run(&mut self) {
         let ref opcodes: HashMap<u8, &'static opcodes::OpCode> = *opcodes::OPCODES_MAP;
@@ -166,6 +216,114 @@ impl CPU {
             let opcode = opcodes.get(&code).expect(&format!("OpCode {:x} is not recognized", code));
 
             match code {
+                /* Arithmetic */
+                /*
+                ADC
+                SBC
+                AND
+                EOR
+                ORA
+                */
+
+                /* Shifts */
+                /*
+                ASL
+                LSR
+                ROL
+                ROR
+                INC
+                INX
+                INY
+                DEC
+                DEX
+                DEY
+                CMP
+                CPY
+                CPX
+                */
+
+                /* Branching */
+                /*
+                JMP
+                JSR
+                RTS
+                RTI
+                BNE
+                BVS
+                BVC
+                BMI
+                BEQ
+                BCS
+                BCC
+                BPL
+                BIT
+                */
+
+                /* Stores and loads */
+                /*
+                LDA
+                LDX
+                LDY
+                STA
+                STX
+                STY
+                */
+
+                /* Clear flags */
+
+                // CLD
+                0xD8 => self.status.remove(CpuFlags::DECIMAL_MODE),
+                // CLI
+                0x58 => self.status.remove(CpuFlags::INTERRUPT_DISABLE),
+                // CLV
+                0xB8 => self.status.remove(CpuFlags::OVERFLOW),
+                // CLC
+                0x18 => self.clear_carry_flag(),
+                // SEC
+                0x38 => self.set_carry_flag(),
+                // SEI
+                0x78 => self.status.insert(CpuFlags::INTERRUPT_DISABLE),
+                // SED
+                0xF8 => self.status.insert(CpuFlags::DECIMAL_MODE),
+
+                // TAX - Transfer Accumulator to X
+                0xAA => self.tax(),
+                // TAY - Transfer Accumulator to Y
+                0xA8 => {
+                    self.register_y = self.register_a;
+                    self.update_zero_and_negative_flags(self.register_y);
+                }
+                // TSX - Transfer stack pointer to X
+                0xBA => {
+                    self.register_x = self.stack_pointer;
+                    self.update_zero_and_negative_flags(self.register_x);
+                }
+                // TXA - Transfer X to A
+                0x8A => {
+                    self.register_a = self.register_x;
+                    self.update_zero_and_negative_flags(self.register_a);
+                }
+                // TXS - Transfer X to stack pointer
+                0x9A => {
+                    self.stack_pointer = self.register_x;
+                }
+                // TYA - Transfer Y to A
+                0x98 => {
+                    self.register_a = self.register_y;
+                    self.update_zero_and_negative_flags(self.register_a);
+                }
+
+                /* Stack */
+
+                // PHA - Push accumulator
+                0x48 => self.stack_push(self.register_a),
+                // PLA
+                0x68 => self.pla(),
+                // PHP
+                0x08 => self.php(),
+                // PLP
+                0x28 => self.plp(),
+
                 // LDA
                 0xA9 | 0xA5 | 0xB5 | 0xAD | 0xBD | 0xB9 | 0xA1 | 0xB1 => {
                     self.lda(&opcode.mode);
@@ -176,10 +334,11 @@ impl CPU {
                     self.sta(&opcode.mode);
                 }
 
-                // TAX - Transfer Accumulator to X
-                0xAA => self.tax(),
                 // INX - Increment X Register
                 0xE8 => self.inx(),
+
+                // NOP - No operation
+                0xEA => {}
                 // BRK - Break
                 0x00 => return,
                 _ => todo!()
@@ -195,18 +354,35 @@ impl CPU {
     fn update_zero_and_negative_flags(&mut self, result: u8) {
         // Set the CPU flag corresponding to value equal to zero
         if result == 0 {
-            self.status = self.status | 0b0000_0010;
+            self.status.insert(CpuFlags::ZERO);
         } else {
-            self.status = self.status & 0b1111_1101;
+            self.status.remove(CpuFlags::ZERO);
         }
 
         // Set the CPU flag corresponding to negative value
         if (result & 0b1000_0000) != 0 {
-            self.status = self.status | 0b1000_0000;
+            self.status.insert(CpuFlags::NEGATIVE);
         } else {
-            self.status = self.status & 0b0111_1111;
+            self.status.remove(CpuFlags::NEGATIVE);
         }
     }
+
+    /* Arithmetic */
+
+    /* Shifts */
+
+    // INX - Increment X Register
+    fn inx(&mut self) {
+        // Add 1 and wrap if there is overflow.
+        self.register_x = self.register_x.wrapping_add(1);
+        self.update_zero_and_negative_flags(self.register_x);
+
+        todo!();
+    }
+
+    /* Branching */
+
+    /* Stores and loads */
 
     // LDA - Load accumulator
     fn lda(&mut self, mode: &AddressingMode) {
@@ -215,12 +391,26 @@ impl CPU {
 
         self.register_a = value;
         self.update_zero_and_negative_flags(self.register_a);
+
+        todo!();
     }
 
     // STA - Store accumulator (saves value in A to a given address in memory)
     fn sta(&mut self, mode: &AddressingMode) {
         let address = self.get_operand_address(mode);
         self.mem_write(address, self.register_a);
+
+        todo!();
+    }
+
+    /* Clear flags */
+
+    fn set_carry_flag(&mut self) {
+        self.status.insert(CpuFlags::CARRY);
+    }
+
+    fn clear_carry_flag(&mut self) {
+        self.status.remove(CpuFlags::CARRY);
     }
 
     // TAX - Transfer Accumulator to X
@@ -228,12 +418,28 @@ impl CPU {
         self.register_x = self.register_a;
         self.update_zero_and_negative_flags(self.register_x);
     }
-    // INX - Increment X Register
-    fn inx(&mut self) {
-        // self.register_x += 1;
-        // Add 1 and wrap if there is overflow.
-        self.register_x = self.register_x.wrapping_add(1);
-        self.update_zero_and_negative_flags(self.register_x);
+
+    /* Stack */
+
+    // PLA - Pull accumulator
+    fn pla(&mut self) {
+        let data = self.stack_pop();
+        self.set_register_a(data);
+    }
+
+    // PHP - Push processor status
+    fn php(&mut self) {
+        let mut flags = self.status.clone();
+        flags.insert(CpuFlags::BREAK);
+        flags.insert(CpuFlags::BREAK2);
+        self.stack_push(flags.bits());
+    }
+
+    // PLP - Pull processor status
+    fn plp(&mut self) {
+        self.status.bits = self.stack_pop();
+        self.status.remove(CpuFlags::BREAK);
+        self.status.remove(CpuFlags::BREAK2);
     }
 }
 
@@ -250,8 +456,8 @@ mod test {
         cpu.load_and_run(vec![0xA9, 0x05, 0x00]);
 
         assert_eq!(cpu.register_a, 0x05);
-        assert!(cpu.status & 0b0000_0010 == 0x00);
-        assert!(cpu.status & 0b1000_0000 == 0x00);
+        assert!(cpu.status.bits() & 0b0000_0010 == 0x00);
+        assert!(cpu.status.bits() & 0b1000_0000 == 0x00);
     }
 
     #[test]
@@ -259,7 +465,7 @@ mod test {
         let mut cpu = CPU::new();
         cpu.load_and_run(vec![0xA9, 0x00, 0x00]);
 
-        assert!(cpu.status & 0b0000_0010 == 0b10);
+        assert!(cpu.status.bits() & 0b0000_0010 == 0b10);
     }
 
     #[test]
