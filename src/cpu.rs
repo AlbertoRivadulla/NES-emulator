@@ -1,4 +1,5 @@
 use crate::opcodes;
+use std::collections::HashMap;
 /*
     Flags in the CPU status:
 
@@ -154,27 +155,27 @@ impl CPU {
     }
 
     fn run(&mut self) {
+        let ref opcodes: HashMap<u8, &'static opcodes::OpCode> = *opcodes::OPCODES_MAP;
+
         loop {
-            let opscode: u8 = self.mem_read(self.program_counter);
+            let code: u8 = self.mem_read(self.program_counter);
             self.program_counter += 1;
 
-            match opscode {
-                // LDA - Load accumulator
-                0xA9 => {
-                    self.lda(&AddressingMode::Immediate);
-                    self.program_counter += 1;
+            let program_counter_state = self.program_counter;
+
+            let opcode = opcodes.get(&code).expect(&format!("OpCode {:x} is not recognized", code));
+
+            match code {
+                // LDA
+                0xA9 | 0xA5 | 0xB5 | 0xAD | 0xBD | 0xB9 | 0xA1 | 0xB1 => {
+                    self.lda(&opcode.mode);
                 }
-                0xA5 => {
-                    self.lda(&AddressingMode::ZeroPage);
-                    self.program_counter += 1;
+
+                // STA
+                0x85 | 0x95 | 0x8D | 0x9D | 0x99 | 0x81 | 0x91 => {
+                    self.sta(&opcode.mode);
                 }
-                // 0xB5 => {
-                //
-                // }
-                0xAD => {
-                    self.lda(&AddressingMode::Absolute);
-                    self.program_counter += 1;
-                }
+
                 // TAX - Transfer Accumulator to X
                 0xAA => self.tax(),
                 // INX - Increment X Register
@@ -182,6 +183,11 @@ impl CPU {
                 // BRK - Break
                 0x00 => return,
                 _ => todo!()
+            }
+
+            // Move the program counter, if it has not been modified by the current instruction.
+            if program_counter_state == self.program_counter {
+                self.program_counter += (opcode.len - 1) as u16;
             }
         }
     }
@@ -211,6 +217,12 @@ impl CPU {
         self.update_zero_and_negative_flags(self.register_a);
     }
 
+    // STA - Store accumulator (saves value in A to a given address in memory)
+    fn sta(&mut self, mode: &AddressingMode) {
+        let address = self.get_operand_address(mode);
+        self.mem_write(address, self.register_a);
+    }
+
     // TAX - Transfer Accumulator to X
     fn tax(&mut self) {
         self.register_x = self.register_a;
@@ -222,44 +234,6 @@ impl CPU {
         // Add 1 and wrap if there is overflow.
         self.register_x = self.register_x.wrapping_add(1);
         self.update_zero_and_negative_flags(self.register_x);
-    }
-
-    /*
-        Interprets an entire program, given as a vector of instructions.
-    */
-    pub fn interpret(&mut self, program: Vec<u8>) {
-        self.program_counter = 0;
-
-        loop {
-            let opscode: u8 = program[self.program_counter as usize];
-            self.program_counter += 1;
-
-            match opscode {
-                // LDA - Load accumulator
-                0xA9 => {
-                    self.lda(&AddressingMode::Immediate);
-                    self.program_counter += 1;
-                }
-                0xA5 => {
-                    self.lda(&AddressingMode::ZeroPage);
-                    self.program_counter += 1;
-                }
-                // 0xB5 => {
-                //
-                // }
-                0xAD => {
-                    self.lda(&AddressingMode::Absolute);
-                    self.program_counter += 1;
-                }
-                // TAX - Transfer Accumulator to X
-                0xAA => self.tax(),
-                // INX - Increment X Register
-                0xE8 => self.inx(),
-                // BRK - Break
-                0x00 => return,
-                _ => todo!()
-            }
-        }
     }
 }
 
@@ -273,7 +247,7 @@ mod test {
     #[test]
     fn test_0xa9_lda_immediate_load_data() {
         let mut cpu = CPU::new();
-        cpu.interpret(vec![0xA9, 0x05, 0x00]);
+        cpu.load_and_run(vec![0xA9, 0x05, 0x00]);
 
         assert_eq!(cpu.register_a, 0x05);
         assert!(cpu.status & 0b0000_0010 == 0x00);
@@ -283,7 +257,7 @@ mod test {
     #[test]
     fn test_0xa9_lda_zero_flag() {
         let mut cpu = CPU::new();
-        cpu.interpret(vec![0xA9, 0x00, 0x00]);
+        cpu.load_and_run(vec![0xA9, 0x00, 0x00]);
 
         assert!(cpu.status & 0b0000_0010 == 0b10);
     }
@@ -291,8 +265,7 @@ mod test {
     #[test]
     fn test_0xxx_tax_move_a_to_x() {
         let mut cpu = CPU::new();
-        cpu.register_a = 10;
-        cpu.interpret(vec![0xAA, 0x00]);
+        cpu.load_and_run(vec![0xA9, 0x0A, 0xAA, 0x00]);
 
         assert_eq!(cpu.register_x, 10);
     }
@@ -300,8 +273,7 @@ mod test {
     #[test]
     fn test_0xe8_inx_overflow() {
         let mut cpu = CPU::new();
-        cpu.register_x = 0xFF;
-        cpu.interpret(vec![0xE8, 0xE8, 0x00]);
+        cpu.load_and_run(vec![0xA9, 0xFF, 0xAA, 0xE8, 0xE8, 0x00]);
 
         assert_eq!(cpu.register_x, 1);
     }
@@ -309,7 +281,7 @@ mod test {
     #[test]
     fn test_5_ops_together() {
         let mut cpu = CPU::new();
-        cpu.interpret(vec![0xA9, 0xC0, 0xAA, 0xE8, 0x00]);
+        cpu.load_and_run(vec![0xA9, 0xC0, 0xAA, 0xE8, 0x00]);
 
         assert_eq!(cpu.register_x, 0xC1);
     }
