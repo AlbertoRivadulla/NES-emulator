@@ -217,13 +217,32 @@ impl CPU {
 
             match code {
                 /* Arithmetic */
-                /*
-                ADC
-                SBC
-                AND
-                EOR
-                ORA
-                */
+
+                // ADC
+                0x69 | 0x65 | 0x75 | 0x6d | 0x7d | 0x79 | 0x61 | 0x71 => {
+                    self.adc(&opcode.mode);
+                }
+
+                // SBC 
+                0xe9 | 0xe5 | 0xf5 | 0xed | 0xfd | 0xf9 | 0xe1 | 0xf1 => {
+                    self.sbc(&opcode.mode);
+                }
+
+                // AND
+                0x29 | 0x25 | 0x35 | 0x2d | 0x3d | 0x39 | 0x21 | 0x31 => {
+                    self.and(&opcode.mode);
+                }
+
+                // EOR
+                0x49 | 0x45 | 0x55 | 0x4d | 0x5d | 0x59 | 0x41 | 0x51 => {
+                    self.eor(&opcode.mode);
+                }
+
+                // ORA
+                0x09 | 0x05 | 0x15 | 0x0d | 0x1d | 0x19 | 0x01 | 0x11 => {
+                    self.ora(&opcode.mode);
+                }
+
 
                 /* Shifts */
                 /*
@@ -241,6 +260,38 @@ impl CPU {
                 CPY
                 CPX
                 */
+
+                // ASL
+                0x0a => self.asl_accumulator(),
+                0x06 | 0x16 | 0x0e | 0x1e => {
+                    self.asl(&opcode.mode);
+                }
+
+                // LSR
+                0x4a => self.lsr_accumulator(),
+                0x46 | 0x56 | 0x4e | 0x5e => {
+                    self.lsr(&opcode.mode);
+                }
+
+                // ROL
+
+                // INC
+
+                // INX
+
+                // INY
+
+                // DEC
+
+                // DEX
+
+                // DEY
+
+                // CMP
+
+                // CPY
+
+                // CPX
 
                 /* Branching */
                 /*
@@ -369,7 +420,105 @@ impl CPU {
 
     /* Arithmetic */
 
+    // Add a value to the register A, taking into account the carry and overflow flags.
+    // http://www.righto.com/2012/12/the-6502-overflow-flag-explained.html
+    // We do not consider decimal mode, since it is not used by the NES processor.
+    fn add_to_register_a(&mut self, data: u8) {
+        let sum = self.register_a as u16
+                + data as u16
+                + (if (self.status.contains(CpuFlags::CARRY)) {
+                    1
+                } else {
+                    0
+                }) as u16;
+
+        // Set carry flag if needed
+        if (sum > 0xff) {
+            self.status.insert(CpuFlags::CARRY);
+        } else {
+            self.status.remove(CpuFlags::CARRY);
+        }
+
+        // Set overflow flag if needed
+        let result = sum as u8;
+        if (data ^ result) & (result ^ self.register_a) && 0x80 != 0 {
+            self.status.insert(CpuFlags::OVERFLOW);
+        } else {
+            self.status.remove(CpuFlags::OVERFLOW);
+        }
+
+        self.set_register_a(result);
+    }
+
+    // ADC - Add and carry
+    fn adc(&mut self, mode: &AddressingMode) {
+        let address = self.get_operand_address(&mode);
+        let value = self.mem_read(address);
+        self.add_to_register_a(value);
+    }
+
+    // SBC - subtract and carry
+    fn sbc(&mut self, mode: &AddressingMode) {
+        let address = self.get_operand_address(&mode);
+        let value = self.mem_red(address);
+        // The quantity "((data as i8).wrapping_neg().wrapping_sub(1)) as u8" is the ones-complement of data, used to
+        // compute the subtraction as an addition, as explained in:
+        //      http://www.righto.com/2012/12/the-6502-overflow-flag-explained.html
+        // In particular (B = 1 - C, where B = borrow and C = carry):
+        //      A - N - B
+        //      = A - N - B + 256
+        //      = A - N - (1-C) + 256
+        //      = A + (255-N) + C
+        //      = A + (ones complement of N) + C
+        // The addition of C is performed inside "add_to_register_a", so we need to compute the ones complemento of N.
+        // In the reference for the emulator, the ones-complement is referred to as !N, but we still need to consider the 
+        // borrow/carry flag, which is where the wrapping_sub(1) commes in.
+        self.add_to_register_a(((data as i8).wrapping_neg().wrapping_sub(1)) as u8);
+    }
+
+    // AND - bitwise AND with accumulator
+    fn and(&mut self, mode: &AddressingMode) {
+        let address = self.get_operand_address(&mode);
+        let value = self.mem_red(address);
+        self.set_register_a(data & self.register_a);
+    }
+
+    // EOR - bitwise exclusive OR with accumulator
+    fn eor(&mut self, mode: &AddressingMode) {
+        let address = self.get_operand_address(&mode);
+        let value = self.mem_red(address);
+        self.set_register_a(data ^ self.register_a);
+    }
+
+    // ORA - bitwise OR with accumulator
+    fn ora(&mut self, mode: &AddressingMode) {
+        let address = self.get_operand_address(&mode);
+        let value = self.mem_red(address);
+        self.set_register_a(data | self.register_a);
+    }
+
     /* Shifts */
+
+    // ASL - Arithmetic shift left
+    fn asl(&mut self, mode: &AddressingMode) {
+        let address = self.get_operand_address(&mode);
+        let value = self.mem_read(address);
+
+
+        // TODO
+    }
+    fn asl_accumulator(&mut self, mode: &AddressingMode) {
+    }
+
+    // LSR - Logical shift right
+    fn lsr(&mut self, mode: &AddressingMode) {
+        let address = self.get_operand_address(&mode);
+        let value = self.mem_read(address);
+
+        // TODO
+    }
+    fn lsr_accumulator(&mut self, mode: &AddressingMode) {
+    }
 
     // INX - Increment X Register
     fn inx(&mut self) {
