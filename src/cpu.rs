@@ -243,23 +243,7 @@ impl CPU {
                     self.ora(&opcode.mode);
                 }
 
-
                 /* Shifts */
-                /*
-                ASL
-                LSR
-                ROL
-                ROR
-                INC
-                INX
-                INY
-                DEC
-                DEX
-                DEY
-                CMP
-                CPY
-                CPX
-                */
 
                 // ASL
                 0x0a => self.asl_accumulator(),
@@ -274,51 +258,184 @@ impl CPU {
                 }
 
                 // ROL
+                0x2a => self.rol_accumulator(),
+                0x26 | 0x36 | 0x2e | 0x3e => {
+                    self.rol(&opcode.mode);
+                }
+
+                // ROR
+                0x6a => self.ror_accumulator(),
+                0x66 | 0x76 | 0x6e | 0x7e => {
+                    self.ror(&opcode.mode);
+                }
 
                 // INC
+                0xe6 | 0xf6 | 0xee | 0xfe => {
+                    self.inc(&opcode.mode);
+                }
 
                 // INX
+                0xE8 => self.inx(),
 
                 // INY
+                0xC8 => self.iny(),
 
                 // DEC
+                0xc6 | 0xd6 | 0xce | 0xde => {
+                    self.dec(&opcode.mode);
+                }
 
                 // DEX
+                0xCA => {
+                    self.dex();
+                }
 
                 // DEY
+                0x88 => {
+                    self.dey();
+                }
 
                 // CMP
+                0xc9 | 0xc5 | 0xd5 | 0xcd | 0xdd | 0xd9 | 0xc1 | 0xd1 => {
+                    self.compare(&opcode.mode, self.register_a);
+                }
 
                 // CPY
+                0xc0 | 0xc4 | 0xcc => {
+                    self.compare(&opcode.mode, self.register_y);
+                }
 
                 // CPX
+                0xe0 | 0xe4 | 0xec => {
+                    self.compare(&opcode.mode, self.register_x);
+                }
 
                 /* Branching */
-                /*
-                JMP
-                JSR
-                RTS
-                RTI
-                BNE
-                BVS
-                BVC
-                BMI
-                BEQ
-                BCS
-                BCC
-                BPL
-                BIT
-                */
+
+                // JMP absolute
+                0x4c => {
+                    let mem_address = self.mem_read_u16(self.program_counter);
+                    self.program_counter = mem_address;
+                }
+
+                // JMP indirect
+                0x6c => {
+                    let mem_address = self.mem_read_u16(self.program_counter);
+
+                    // Manage the ase in which we are reading the last byte of a page, as explained in 
+                    //      http://www.6502.org/tutorials/6502opcodes.html#JMP
+                    let indirect_ref = if mem_address & 0x00FF == 0x00FF {
+                        let lo = self.mem_read(mem_address);
+                        let hi = self.mem_read(mem_address & 0xFF00);
+                        (hi as u16) << 8 | (lo as u16)
+                    } else {
+                        self.mem_read_u16(mem_address)
+                    };
+
+                    self.program_counter = indirect_ref;
+                }
+
+                // JSR - Jump to subroutine
+                0x20 => {
+                    // Add 2 to the program counter, which correspond to the 2 bytes that are read to get the address of
+                    // the subroutine.
+                    // Subtract 1 to account for the 1 that is added to it in the instruction RTS.
+                    self.stack_push_u16(self.program_counter + 2 - 1);
+                    let target_address = self.mem_read_u16(self.program_counter);
+                    self.program_counter = target_address;
+                }
+
+                // RTS - Return from subroutine
+                0x60 => {
+                    self.program_counter = self.stack_pop_u16() + 1;
+                }
+
+                // RTI - Return from interrupt
+                0x40 => {
+                    self.status.bits = self.stack_pop();
+                    self.status.remove(CpuFlags::BREAK);
+                    self.status.remove(CpuFlags::BREAK2);
+                    self.program_counter = self.stack_pop_u16();
+                }
+
+                // BNE - Branch on non equal
+                0xD0 => {
+                    self.branch(!self.status.contains(CpuFlags::ZERO));
+                }
+
+                // BVS - Branch on overflow set
+                0x70 => {
+                    self.branch(self.status.contains(CpuFlags::OVERFLOW));
+                }
+
+                // BVC - Branch on overflow clear
+                0x50 => {
+                    self.branch(!self.status.contains(CpuFlags::OVERFLOW));
+                }
+
+                // BMI - Branch on minus
+                0x30 => {
+                    self.branch(self.status.contains(CpuFlags::NEGATIVE));
+                }
+
+                // BEQ - Branch on equal
+                0xF0 => {
+                    self.branch(self.status.contains(CpuFlags::ZERO));
+                }
+
+                // BCS - Branch on carry set
+                0xB0 => {
+                    self.branch(self.status.contains(CpuFlags::CARRY));
+                }
+
+                // BCC - Branch on carry clear
+                0x90 => {
+                    self.branch(!self.status.contains(CpuFlags::CARRY));
+                }
+
+                // BPL - Branch on plus
+                0x10 => {
+                    self.branch(!self.status.contains(CpuFlags::NEGATIVE));
+                }
+
+                // BIT
+                0x24 | 0x2c => {
+                    self.bit(&opcode.mode);
+                }
 
                 /* Stores and loads */
-                /*
-                LDA
-                LDX
-                LDY
-                STA
-                STX
-                STY
-                */
+
+                // LDA
+                0xA9 | 0xA5 | 0xB5 | 0xAD | 0xBD | 0xB9 | 0xA1 | 0xB1 => {
+                    self.lda(&opcode.mode);
+                }
+
+                // LDX
+                0xa2 | 0xa6 | 0xb6 | 0xae | 0xbe => {
+                    self.ldx(&opcode.mode);
+                }
+
+                // LDY
+                0xa0 | 0xa4 | 0xb4 | 0xac | 0xbc => {
+                    self.ldy(&opcode.mode);
+                }
+
+                // STA
+                0x85 | 0x95 | 0x8D | 0x9D | 0x99 | 0x81 | 0x91 => {
+                    self.sta(&opcode.mode);
+                }
+
+                // STX - Store X register
+                0x86 | 0x96 | 0x8e => {
+                    let address = self.get_operand_address(&opcode.mode);
+                    self.mem_write(address, self.register_x);
+                }
+
+                // STY - Store Y register
+                0x84 | 0x94 | 0x8c => {
+                    let address = self.get_operand_address(&opcode.mode);
+                    self.mem_write(address, self.register_y);
+                }
 
                 /* Clear flags */
 
@@ -375,19 +492,6 @@ impl CPU {
                 // PLP
                 0x28 => self.plp(),
 
-                // LDA
-                0xA9 | 0xA5 | 0xB5 | 0xAD | 0xBD | 0xB9 | 0xA1 | 0xB1 => {
-                    self.lda(&opcode.mode);
-                }
-
-                // STA
-                0x85 | 0x95 | 0x8D | 0x9D | 0x99 | 0x81 | 0x91 => {
-                    self.sta(&opcode.mode);
-                }
-
-                // INX - Increment X Register
-                0xE8 => self.inx(),
-
                 // NOP - No operation
                 0xEA => {}
                 // BRK - Break
@@ -426,14 +530,14 @@ impl CPU {
     fn add_to_register_a(&mut self, data: u8) {
         let sum = self.register_a as u16
                 + data as u16
-                + (if (self.status.contains(CpuFlags::CARRY)) {
+                + (if self.status.contains(CpuFlags::CARRY) {
                     1
                 } else {
                     0
                 }) as u16;
 
         // Set carry flag if needed
-        if (sum > 0xff) {
+        if sum > 0xff {
             self.status.insert(CpuFlags::CARRY);
         } else {
             self.status.remove(CpuFlags::CARRY);
@@ -441,7 +545,7 @@ impl CPU {
 
         // Set overflow flag if needed
         let result = sum as u8;
-        if (data ^ result) & (result ^ self.register_a) && 0x80 != 0 {
+        if (data ^ result) & (result ^ self.register_a) & 0x80 != 0 {
             self.status.insert(CpuFlags::OVERFLOW);
         } else {
             self.status.remove(CpuFlags::OVERFLOW);
@@ -460,7 +564,7 @@ impl CPU {
     // SBC - subtract and carry
     fn sbc(&mut self, mode: &AddressingMode) {
         let address = self.get_operand_address(&mode);
-        let value = self.mem_red(address);
+        let value = self.mem_read(address);
         // The quantity "((data as i8).wrapping_neg().wrapping_sub(1)) as u8" is the ones-complement of data, used to
         // compute the subtraction as an addition, as explained in:
         //      http://www.righto.com/2012/12/the-6502-overflow-flag-explained.html
@@ -473,51 +577,178 @@ impl CPU {
         // The addition of C is performed inside "add_to_register_a", so we need to compute the ones complemento of N.
         // In the reference for the emulator, the ones-complement is referred to as !N, but we still need to consider the 
         // borrow/carry flag, which is where the wrapping_sub(1) commes in.
-        self.add_to_register_a(((data as i8).wrapping_neg().wrapping_sub(1)) as u8);
+        self.add_to_register_a(((value as i8).wrapping_neg().wrapping_sub(1)) as u8);
     }
 
     // AND - bitwise AND with accumulator
     fn and(&mut self, mode: &AddressingMode) {
         let address = self.get_operand_address(&mode);
-        let value = self.mem_red(address);
-        self.set_register_a(data & self.register_a);
+        let value = self.mem_read(address);
+        self.set_register_a(value & self.register_a);
     }
 
     // EOR - bitwise exclusive OR with accumulator
     fn eor(&mut self, mode: &AddressingMode) {
         let address = self.get_operand_address(&mode);
-        let value = self.mem_red(address);
-        self.set_register_a(data ^ self.register_a);
+        let value = self.mem_read(address);
+        self.set_register_a(value ^ self.register_a);
     }
 
     // ORA - bitwise OR with accumulator
     fn ora(&mut self, mode: &AddressingMode) {
         let address = self.get_operand_address(&mode);
-        let value = self.mem_red(address);
-        self.set_register_a(data | self.register_a);
+        let value = self.mem_read(address);
+        self.set_register_a(value | self.register_a);
     }
 
     /* Shifts */
 
     // ASL - Arithmetic shift left
-    fn asl(&mut self, mode: &AddressingMode) {
+    fn asl(&mut self, mode: &AddressingMode) -> u8 {
         let address = self.get_operand_address(&mode);
-        let value = self.mem_read(address);
+        let mut data = self.mem_read(address);
 
+        if data >> 7 == 1 {
+            self.set_carry_flag();
+        } else {
+            self.clear_carry_flag();
+        }
 
-        // TODO
+        data = data << 1;
+        self.mem_write(address, data);
+        self.update_zero_and_negative_flags(data);
+        data
     }
-    fn asl_accumulator(&mut self, mode: &AddressingMode) {
+    // ASL - Arithmetic shift in the accumulator
+    fn asl_accumulator(&mut self) {
+        let mut data = self.register_a;
+
+        if data >> 7 == 1 {
+            self.set_carry_flag();
+        } else {
+            self.clear_carry_flag();
+        }
+
+        data = data << 1;
+        self.set_register_a(data);
     }
 
     // LSR - Logical shift right
-    fn lsr(&mut self, mode: &AddressingMode) {
+    fn lsr(&mut self, mode: &AddressingMode) -> u8 {
         let address = self.get_operand_address(&mode);
-        let value = self.mem_read(address);
+        let mut data = self.mem_read(address);
 
-        // TODO
+        if data & 1 == 1 {
+            self.set_carry_flag();
+        } else {
+            self.clear_carry_flag();
+        }
+
+        data = data >> 1;
+        self.mem_write(address, data);
+        self.update_zero_and_negative_flags(data);
+        data
     }
-    fn lsr_accumulator(&mut self, mode: &AddressingMode) {
+    // LSR - Logical shift right in the accumulator
+    fn lsr_accumulator(&mut self) {
+        let mut data = self.register_a;
+
+        if data & 1 == 1 {
+            self.set_carry_flag();
+        } else {
+            self.clear_carry_flag();
+        }
+
+        data = data >> 1;
+        self.set_register_a(data);
+    }
+
+    // ROL - Rotate left
+    fn rol(&mut self, mode: &AddressingMode) -> u8 {
+        let address = self.get_operand_address(&mode);
+        let mut data = self.mem_read(address);
+        let old_carry = self.status.contains(CpuFlags::CARRY);
+        
+        if data >> 7 == 1 {
+            self.set_carry_flag();
+        } else {
+            self.clear_carry_flag();
+        }
+        data = data << 1;
+        if old_carry {
+            data = data | 1;
+        }
+
+        self.mem_write(address, data);
+        self.update_zero_and_negative_flags(data);
+        data
+    }
+    // ROL - Rotate left the accumulator
+    fn rol_accumulator(&mut self) {
+        let mut data = self.register_a;
+        let old_carry = self.status.contains(CpuFlags::CARRY);
+        
+        if data >> 7 == 1 {
+            self.set_carry_flag();
+        } else {
+            self.clear_carry_flag();
+        }
+        data = data << 1;
+        if old_carry {
+            data = data | 1;
+        }
+
+        self.set_register_a(data);
+    }
+
+    // ROR - Rotate right
+    fn ror(&mut self, mode: &AddressingMode) -> u8 {
+        let address = self.get_operand_address(&mode);
+        let mut data = self.mem_read(address);
+        let old_carry = self.status.contains(CpuFlags::CARRY);
+        
+        if data & 1 == 1 {
+            self.set_carry_flag();
+        } else {
+            self.clear_carry_flag();
+        }
+        data = data >> 1;
+        if old_carry {
+            data = data | 1;
+        }
+
+        self.mem_write(address, data);
+        self.update_zero_and_negative_flags(data);
+        data
+    }
+    // ROR - Rotate right the accumulator
+    fn ror_accumulator(&mut self) {
+        let mut data = self.register_a;
+        let old_carry = self.status.contains(CpuFlags::CARRY);
+        
+        if data & 1 == 1 {
+            self.set_carry_flag();
+        } else {
+            self.clear_carry_flag();
+        }
+        data = data >> 1;
+        if old_carry {
+            data = data | 0b10000000;
+        }
+
+        self.set_register_a(data);
+    }
+
+    // INC - Increment memory
+    fn inc(&mut self, mode: &AddressingMode) -> u8 {
+        let address = self.get_operand_address(&mode);
+        let mut data = self.mem_read(address);
+
+        data = data.wrapping_add(1);
+
+        self.mem_write(address, data);
+        self.update_zero_and_negative_flags(data);
+        data
     }
 
     // INX - Increment X Register
@@ -525,11 +756,83 @@ impl CPU {
         // Add 1 and wrap if there is overflow.
         self.register_x = self.register_x.wrapping_add(1);
         self.update_zero_and_negative_flags(self.register_x);
+    }
 
-        todo!();
+    // INY - Increment Y Register
+    fn iny(&mut self) {
+        // Add 1 and wrap if there is overflow.
+        self.register_x = self.register_y.wrapping_add(1);
+        self.update_zero_and_negative_flags(self.register_x);
+    }
+
+    // DEC - Decrement memory
+    fn dec(&mut self, mode: &AddressingMode) -> u8 {
+        let address = self.get_operand_address(&mode);
+        let mut data = self.mem_read(address);
+
+        data = data.wrapping_sub(1);
+
+        self.mem_write(address, data);
+        self.update_zero_and_negative_flags(data);
+        data
+    }
+
+    // DEX - Decrement X Register
+    fn dex(&mut self) {
+        self.register_x = self.register_x.wrapping_sub(1);
+        self.update_zero_and_negative_flags(self.register_x);
+    }
+
+    // DEY - Decrement Y Register
+    fn dey(&mut self) {
+        self.register_x = self.register_y.wrapping_sub(1);
+        self.update_zero_and_negative_flags(self.register_x);
+    }
+
+    // CMP - Compare accumulator
+    fn compare(&mut self, mode: &AddressingMode, compare_with: u8) {
+        let address = self.get_operand_address(&mode);
+        let data = self.mem_read(address);
+
+        if data <= compare_with {
+            self.status.insert(CpuFlags::CARRY);
+        } else {
+            self.status.remove(CpuFlags::CARRY);
+        }
+
+        self.update_zero_and_negative_flags(compare_with.wrapping_sub(data));
     }
 
     /* Branching */
+
+    fn branch(&mut self, condition: bool) {
+        if condition {
+            let jump: i8 = self.mem_read(self.program_counter) as i8;
+            let jump_address = self
+                .program_counter
+                .wrapping_add(1)
+                .wrapping_add(jump as u16);
+
+            self.program_counter = jump_address;
+        }
+    }
+
+    // BIT - test BITs
+    fn bit(&mut self, mode: &AddressingMode) {
+        let address = self.get_operand_address(&mode);
+        let value = self.mem_read(address);
+
+        let and = self.register_a & value;
+
+        if and == 0 {
+            self.status.insert(CpuFlags::ZERO);
+        } else {
+            self.status.remove(CpuFlags::ZERO);
+        }
+
+        self.status.set(CpuFlags::NEGATIVE, value & 0b10000000 > 0);
+        self.status.set(CpuFlags::OVERFLOW, value & 0b01000000 > 0);
+    }
 
     /* Stores and loads */
 
@@ -538,19 +841,33 @@ impl CPU {
         let address = self.get_operand_address(&mode);
         let value = self.mem_read(address);
 
-        self.register_a = value;
-        self.update_zero_and_negative_flags(self.register_a);
+        self.set_register_a(value);
+    }
 
-        todo!();
+    // LDX - Load X register
+    fn ldx(&mut self, mode: &AddressingMode) {
+        let address = self.get_operand_address(&mode);
+        let value = self.mem_read(address);
+
+        self.register_x = value;
+        self.update_zero_and_negative_flags(self.register_x);
+    }
+
+    // LDY - Load Y register
+    fn ldy(&mut self, mode: &AddressingMode) {
+        let address = self.get_operand_address(&mode);
+        let value = self.mem_read(address);
+
+        self.register_y = value;
+        self.update_zero_and_negative_flags(self.register_y);
     }
 
     // STA - Store accumulator (saves value in A to a given address in memory)
     fn sta(&mut self, mode: &AddressingMode) {
         let address = self.get_operand_address(mode);
         self.mem_write(address, self.register_a);
-
-        todo!();
     }
+
 
     /* Clear flags */
 
