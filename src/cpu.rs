@@ -56,7 +56,7 @@ pub enum AddressingMode {
 }
 
 
-trait Mem {
+pub trait Mem {
     fn mem_read(&self, address: u16) -> u8;
 
     fn mem_write(&mut self, address: u16, data: u8);
@@ -185,15 +185,19 @@ impl CPU {
         self.run();
     }
 
-    fn load(&mut self, program: Vec<u8>) {
-        // The memory addresses [ 0x8000 .. 0xFFFF ] correspond to Program ROM
-        self.memory[0x8000 .. (0x8000 + program.len())]
+    pub fn load(&mut self, program: Vec<u8>) {
+        self.memory[0x0600 .. (0x0600 + program.len())]
             .copy_from_slice(&program[..]);
-        // Store the location of the first opcode in the address 0xFFFC, which is the first read by the NES CPU.
-        self.mem_write_u16(0xFFFC, 0x8000);
+        self.mem_write_u16(0xFFFC, 0x0600);
+
+        // // The memory addresses [ 0x8000 .. 0xFFFF ] correspond to Program ROM
+        // self.memory[0x8000 .. (0x8000 + program.len())]
+        //     .copy_from_slice(&program[..]);
+        // // Store the location of the first opcode in the address 0xFFFC, which is the first read by the NES CPU.
+        // self.mem_write_u16(0xFFFC, 0x8000);
     }
 
-    fn reset(&mut self) {
+    pub fn reset(&mut self) {
         self.register_a = 0;
         self.register_x = 0;
         self.register_y = 0;
@@ -204,10 +208,19 @@ impl CPU {
     }
 
 
-    fn run(&mut self) {
+    pub fn run(&mut self) {
+        self.run_with_callback(|_| {});
+    }
+
+    pub fn run_with_callback<F>(&mut self, mut callback: F)
+    where 
+        F: FnMut(&mut CPU)
+    {
         let ref opcodes: HashMap<u8, &'static opcodes::OpCode> = *opcodes::OPCODES_MAP;
 
         loop {
+            callback(self);
+
             let code: u8 = self.mem_read(self.program_counter);
             self.program_counter += 1;
 
