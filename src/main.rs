@@ -1,10 +1,15 @@
 pub mod cpu;
 pub mod opcodes;
+pub mod bus;
 
-use crate::cpu::CPU;
-use crate::cpu::Mem;
+// use crate::cpu::CPU;
+// use crate::cpu::Mem;
+use cpu::Mem;
+use cpu::CPU;
+use bus::Bus;
 
 use rand::Rng;
+
 use sdl2::event::Event;
 use sdl2::EventPump;
 use sdl2::keyboard::Keycode;
@@ -126,7 +131,8 @@ fn main() {
         0xea, 0xca, 0xd0, 0xfb, 0x60
     ];
 
-    let mut cpu = CPU::new();
+    let bus = Bus::new();
+    let mut cpu = CPU::new(bus);
     cpu.load(game_code);
     cpu.reset();
 
