@@ -102,7 +102,7 @@ impl CPU {
             register_x: 0,
             register_y: 0,
             status: CpuFlags::from_bits_truncate(0b100100),
-            program_counter: 0,
+            program_counter: 0x8000,
             stack_pointer: STACK_RESET,
             bus: bus
         }
@@ -221,7 +221,6 @@ impl CPU {
 
         self.program_counter = self.mem_read_u16(0xFFFC);
     }
-
 
     pub fn run(&mut self) {
         self.run_with_callback(|_| {});
@@ -350,7 +349,7 @@ impl CPU {
                 0x6c => {
                     let mem_address = self.mem_read_u16(self.program_counter);
 
-                    // Manage the ase in which we are reading the last byte of a page, as explained in 
+                    // Manage the case in which we are reading the last byte of a page, as explained in 
                     //      http://www.6502.org/tutorials/6502opcodes.html#JMP
                     let indirect_ref = if mem_address & 0x00FF == 0x00FF {
                         let lo = self.mem_read(mem_address);
@@ -941,14 +940,16 @@ impl CPU {
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::cartridge::test;
 
     // Tests from section 3.1
 
     #[test]
     fn test_0xa9_lda_immediate_load_data() {
-        let bus = Bus::new();
+        let bus = Bus::new(test::test_rom(vec![0xa9, 0x05, 0x00]));
         let mut cpu = CPU::new(bus);
-        cpu.load_and_run(vec![0xA9, 0x05, 0x00]);
+
+        cpu.run();
 
         assert_eq!(cpu.register_a, 0x05);
         assert!(cpu.status.bits() & 0b0000_0010 == 0x00);
@@ -957,36 +958,40 @@ mod test {
 
     #[test]
     fn test_0xa9_lda_zero_flag() {
-        let bus = Bus::new();
+        let bus = Bus::new(test::test_rom(vec![0xA9, 0x00, 0x00]));
         let mut cpu = CPU::new(bus);
-        cpu.load_and_run(vec![0xA9, 0x00, 0x00]);
+
+        cpu.run();
 
         assert!(cpu.status.bits() & 0b0000_0010 == 0b10);
     }
 
     #[test]
     fn test_0xxx_tax_move_a_to_x() {
-        let bus = Bus::new();
+        let bus = Bus::new(test::test_rom(vec![0xA9, 0x0A, 0xAA, 0x00]));
         let mut cpu = CPU::new(bus);
-        cpu.load_and_run(vec![0xA9, 0x0A, 0xAA, 0x00]);
+
+        cpu.run();
 
         assert_eq!(cpu.register_x, 10);
     }
 
     #[test]
     fn test_0xe8_inx_overflow() {
-        let bus = Bus::new();
+        let bus = Bus::new(test::test_rom(vec![0xA9, 0xFF, 0xAA, 0xE8, 0xE8, 0x00]));
         let mut cpu = CPU::new(bus);
-        cpu.load_and_run(vec![0xA9, 0xFF, 0xAA, 0xE8, 0xE8, 0x00]);
+
+        cpu.run();
 
         assert_eq!(cpu.register_x, 1);
     }
 
     #[test]
     fn test_5_ops_together() {
-        let bus = Bus::new();
+        let bus = Bus::new(test::test_rom(vec![0xA9, 0xC0, 0xAA, 0xE8, 0x00]));
         let mut cpu = CPU::new(bus);
-        cpu.load_and_run(vec![0xA9, 0xC0, 0xAA, 0xE8, 0x00]);
+
+        cpu.run();
 
         assert_eq!(cpu.register_x, 0xC1);
     }
@@ -995,10 +1000,11 @@ mod test {
 
     #[test]
     fn test_lda_from_memory() {
-        let bus = Bus::new();
+        let bus = Bus::new(test::test_rom(vec![0xa5, 0x10, 0x00]));
         let mut cpu = CPU::new(bus);
         cpu.mem_write(0x10, 0x55);
-        cpu.load_and_run(vec![0xa5, 0x10, 0x00]);
+
+        cpu.run();
 
         assert_eq!(cpu.register_a, 0x55);
     }
