@@ -2,6 +2,7 @@ pub mod cpu;
 pub mod opcodes;
 pub mod bus;
 pub mod cartridge;
+pub mod trace;
 
 // use crate::cpu::CPU;
 // use crate::cpu::Mem;
@@ -9,6 +10,7 @@ use cpu::Mem;
 use cpu::CPU;
 use bus::Bus;
 use cartridge::Rom;
+use trace::trace;
 
 use rand::Rng;
 
@@ -93,49 +95,61 @@ fn read_screen_state(cpu: &CPU, frame: &mut [u8; 32 * 3 * 32]) -> bool {
 }
 
 fn main() {
-    // Initialize SDL2
-    let sdl_context = sdl2::init().unwrap();
-    let video_subsystem = sdl_context.video().unwrap();
-    let window = video_subsystem
-        .window("Snake game", (32. * 10.) as u32, (32. * 10.) as u32)
-        .position_centered()
-        .build().unwrap();
+    // // Initialize SDL2
+    // let sdl_context = sdl2::init().unwrap();
+    // let video_subsystem = sdl_context.video().unwrap();
+    // let window = video_subsystem
+    //     .window("Snake game", (32. * 10.) as u32, (32. * 10.) as u32)
+    //     .position_centered()
+    //     .build().unwrap();
+    //
+    // let mut canvas = window.into_canvas().present_vsync().build().unwrap();
+    // let mut event_pump = sdl_context.event_pump().unwrap();
+    // canvas.set_scale(10., 10.).unwrap();
+    //
+    // // Create a texture that will be used for rendering
+    // let texture_creator = canvas.texture_creator();
+    // let mut texture = texture_creator.create_texture_target(PixelFormatEnum::RGB24, 32, 32).unwrap();
+    //
+    // // Load the game from the dump rom
+    // let rom_bytes: Vec<u8> = std::fs::read("snake.nes").unwrap();
+    // let rom = Rom::new(&rom_bytes).unwrap();
+    //
+    // let bus = Bus::new(rom);
+    // let mut cpu = CPU::new(bus);
+    // cpu.reset();
+    //
+    // // Initialize the screen
+    // let mut screen_state = [0 as u8; 32 * 3 * 32];
+    // let mut rng = rand::thread_rng();
+    //
+    // cpu.run_with_callback(move |cpu| {
+    //     // The callback function that will be called before running each instruction
+    //     handle_user_input(cpu, &mut event_pump);
+    //     // Update mem[0xFE] with new Random Number
+    //     cpu.mem_write(0xfe, rng.gen_range(1, 16));
+    //
+    //     // Redraw the scene if it changed
+    //     if read_screen_state(cpu, &mut screen_state) {
+    //         texture.update(None, &screen_state, 32 * 3).unwrap();
+    //         canvas.copy(&texture, None, None).unwrap();
+    //         canvas.present();
+    //     }
+    //
+    //     // Wait 70000 nanoseconds (or 70 microseconds)
+    //     std::thread::sleep(std::time::Duration::new(0, 70000));
+    // });
 
-    let mut canvas = window.into_canvas().present_vsync().build().unwrap();
-    let mut event_pump = sdl_context.event_pump().unwrap();
-    canvas.set_scale(10., 10.).unwrap();
-
-    // Create a texture that will be used for rendering
-    let texture_creator = canvas.texture_creator();
-    let mut texture = texture_creator.create_texture_target(PixelFormatEnum::RGB24, 32, 32).unwrap();
-
-    // Load the game from the dump rom
-    let rom_bytes: Vec<u8> = std::fs::read("snake.nes").unwrap();
+    // Run the test rom and print the trace
+    let rom_bytes: Vec<u8> = std::fs::read("../roms/nestest.nes").unwrap();
     let rom = Rom::new(&rom_bytes).unwrap();
 
     let bus = Bus::new(rom);
     let mut cpu = CPU::new(bus);
     cpu.reset();
-
-    // Initialize the screen
-    let mut screen_state = [0 as u8; 32 * 3 * 32];
-    let mut rng = rand::thread_rng();
+    cpu.program_counter = 0xC000;
 
     cpu.run_with_callback(move |cpu| {
-        // The callback function that will be called before running each instruction
-        handle_user_input(cpu, &mut event_pump);
-        // Update mem[0xFE] with new Random Number
-        cpu.mem_write(0xfe, rng.gen_range(1, 16));
-
-        // Redraw the scene if it changed
-        if read_screen_state(cpu, &mut screen_state) {
-            texture.update(None, &screen_state, 32 * 3).unwrap();
-            canvas.copy(&texture, None, None).unwrap();
-            canvas.present();
-        }
-
-        // Wait 70000 nanoseconds (or 70 microseconds)
-        std::thread::sleep(std::time::Duration::new(0, 70000));
+        println!("{}", trace(cpu));
     });
-
 }
