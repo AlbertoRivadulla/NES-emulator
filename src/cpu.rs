@@ -58,11 +58,11 @@ pub enum AddressingMode {
 
 
 pub trait Mem {
-    fn mem_read(&self, address: u16) -> u8;
+    fn mem_read(&mut self, address: u16) -> u8;
 
     fn mem_write(&mut self, address: u16, data: u8);
 
-    fn mem_read_u16(&self, address: u16) -> u16 {
+    fn mem_read_u16(&mut self, address: u16) -> u16 {
         // Read a 2-byte value, stored in little-endian convention
         let lo = self.mem_read(address) as u16;
         let hi = self.mem_read(address + 1) as u16;
@@ -78,11 +78,11 @@ pub trait Mem {
 }
 
 impl Mem for CPU {
-    fn mem_read(&self, address: u16) -> u8 {
+    fn mem_read(&mut self, address: u16) -> u8 {
         self.bus.mem_read(address)
     }
 
-    fn mem_read_u16(&self, address: u16) -> u16 {
+    fn mem_read_u16(&mut self, address: u16) -> u16 {
         self.bus.mem_read_u16(address)
     }
 
@@ -108,7 +108,7 @@ impl CPU {
         }
     }
 
-    pub fn get_absolute_address(&self, mode: &AddressingMode, address: u16) -> u16 {
+    pub fn get_absolute_address(&mut self, mode: &AddressingMode, address: u16) -> u16 {
         match mode {
             AddressingMode::Immediate => address,
             AddressingMode::ZeroPage => self.mem_read(address) as u16,
@@ -160,7 +160,7 @@ impl CPU {
     /*
         Get the address of the next operand, depending on the addressing mode
     */
-    fn get_operand_address(&self, mode: &AddressingMode) -> u16 {
+    fn get_operand_address(&mut self, mode: &AddressingMode) -> u16 {
         self.get_absolute_address(mode, self.program_counter)
     }
 
@@ -1191,7 +1191,7 @@ mod test {
 
     #[test]
     fn test_0xa9_lda_immediate_load_data() {
-        let bus = Bus::new(test::test_rom(vec![0xa9, 0x05, 0x00]));
+        let bus = Bus::new(test::test_rom_containing(vec![0xa9, 0x05, 0x00]));
         let mut cpu = CPU::new(bus);
 
         cpu.run();
@@ -1203,7 +1203,7 @@ mod test {
 
     #[test]
     fn test_0xa9_lda_zero_flag() {
-        let bus = Bus::new(test::test_rom(vec![0xA9, 0x00, 0x00]));
+        let bus = Bus::new(test::test_rom_containing(vec![0xA9, 0x00, 0x00]));
         let mut cpu = CPU::new(bus);
 
         cpu.run();
@@ -1213,7 +1213,7 @@ mod test {
 
     #[test]
     fn test_0xxx_tax_move_a_to_x() {
-        let bus = Bus::new(test::test_rom(vec![0xA9, 0x0A, 0xAA, 0x00]));
+        let bus = Bus::new(test::test_rom_containing(vec![0xA9, 0x0A, 0xAA, 0x00]));
         let mut cpu = CPU::new(bus);
 
         cpu.run();
@@ -1223,7 +1223,7 @@ mod test {
 
     #[test]
     fn test_0xe8_inx_overflow() {
-        let bus = Bus::new(test::test_rom(vec![0xA9, 0xFF, 0xAA, 0xE8, 0xE8, 0x00]));
+        let bus = Bus::new(test::test_rom_containing(vec![0xA9, 0xFF, 0xAA, 0xE8, 0xE8, 0x00]));
         let mut cpu = CPU::new(bus);
 
         cpu.run();
@@ -1233,7 +1233,7 @@ mod test {
 
     #[test]
     fn test_5_ops_together() {
-        let bus = Bus::new(test::test_rom(vec![0xA9, 0xC0, 0xAA, 0xE8, 0x00]));
+        let bus = Bus::new(test::test_rom_containing(vec![0xA9, 0xC0, 0xAA, 0xE8, 0x00]));
         let mut cpu = CPU::new(bus);
 
         cpu.run();
@@ -1245,7 +1245,7 @@ mod test {
 
     #[test]
     fn test_lda_from_memory() {
-        let bus = Bus::new(test::test_rom(vec![0xa5, 0x10, 0x00]));
+        let bus = Bus::new(test::test_rom_containing(vec![0xa5, 0x10, 0x00]));
         let mut cpu = CPU::new(bus);
         cpu.mem_write(0x10, 0x55);
 

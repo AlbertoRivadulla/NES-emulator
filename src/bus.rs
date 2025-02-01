@@ -1,7 +1,7 @@
 use crate::cartridge::Rom;
 use crate::cpu::Mem;
-use crate::PPU::NesPPU;
-use crate::PPU::PPU;
+use crate::ppu::NesPPU;
+use crate::ppu::PPU;
 
 //  _______________ $10000  _______________
 // | PRG-ROM       |       |               |
@@ -67,7 +67,7 @@ impl Bus {
 }
 
 impl Mem for Bus {
-    fn mem_read(&self, address: u16) -> u8 {
+    fn mem_read(&mut self, address: u16) -> u8 {
         match address {
             RAM ..= RAM_MIRRORS_END => {
                 let mirror_down_addr = address & 0b00000111_11111111;
