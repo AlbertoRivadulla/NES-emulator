@@ -39,7 +39,9 @@ const PPU_REGISTERS_MIRRORS_END: u16 = 0x3FFF;
 pub struct Bus {
     cpu_vram: [u8; 2048],
     prg_rom: Vec<u8>,
-    ppu: NesPPU
+    ppu: NesPPU,
+
+    cycles: usize
 }
 
 impl Bus {
@@ -49,7 +51,8 @@ impl Bus {
         Bus {
             cpu_vram: [0; 2048],
             prg_rom: rom.prg_rom,
-            ppu: ppu
+            ppu: ppu,
+            cycles: 0
         }
     }
 
@@ -63,6 +66,19 @@ impl Bus {
             addr = addr % 0x4000;
         }
         self.prg_rom[addr as usize]
+    }
+
+    /*
+        This is called after running an instruction in the CPU, passing the number of cycles that the instruction took.
+        The number cycles passed to the PPU is multiplied by 3, since its clock speed is three times that of the CPU.
+    */
+    pub fn tick(&mut self, cycles: u8) {
+        self.cycles += cycles as usize;
+        self.ppu.tick(cycles * 3);
+    }
+
+    pub fn poll_nmi_status(&mut self) -> Option<u8> {
+        self.ppu.nmi_interrupt.take()
     }
 }
 
